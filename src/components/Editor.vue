@@ -248,6 +248,8 @@ const saveFabricObject = () =>{
     'sample_pdf',
     JSON.stringify({ pdfName: 'sample_pdf', objects })
   )
+
+  alert('Custom fields are saved for this document!')
 }
   
   
@@ -284,6 +286,7 @@ overflow: auto;
   border-radius: 4px;
   width: 200px;
   cursor: pointer;
+  color: black
 }
 
 .pdf-canvas {

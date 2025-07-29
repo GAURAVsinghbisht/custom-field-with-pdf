@@ -2,8 +2,8 @@
   <div class="patients">
     <h2>Patient List</h2>
     <ul>
-      <li v-for="p in patients" :key="p.id">
-        <button @click="openModal(p)">
+      <li v-for="p in patients" :key="p.id" style=" color: black;">
+        <button @click="openModal(p)" style=" color: black;">
           {{ p.firstName }} {{ p.lastName }}
         </button>
       </li>
@@ -13,8 +13,8 @@
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal-content">
         <div style="margin:20px">
-            <button class="close-btn" @click="closeModal">✕</button>
-            <button class="print-btn" @click="downloadPDF">Download PDF</button>
+            <button class="close-btn" @click="closeModal" style=" color: black;">✕</button>
+            <button class="print-btn" @click="downloadPDF" style=" color: black;">Download PDF</button>
         </div>
        
         <canvas ref="modalCanvas" class="fabric-canvas"></canvas>
