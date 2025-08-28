@@ -120,37 +120,141 @@ async function renderModalPDF(p) {
   })
 }
 
+function createReadonlyText({ left, top, width, height, text }) {
+  const tb = new fabric.Textbox(String(text ?? ''), {
+    left, top, width: width || 150, height: height || 30,
+    fontSize: 16,
+    editable: false, selectable: false, evented: false,
+    hasControls: false, hasBorders: false,
+  })
+  // hard lock position
+  tb.lockMovementX = true
+  tb.lockMovementY = true
+  return tb
+}
+
+function createCheckboxFill({ left, top, size = 18, checked = false, fieldName = 'checkbox' }) {
+  const box = new fabric.Rect({
+    width: size, height: size,
+    stroke: '#000', fill: '#fff', rx: 3, ry: 3,
+    selectable: false, evented: false,
+  })
+  const tick = new fabric.Path('M 3 10 L 8 15 L 15 4', {
+    stroke: '#000', fill: null, strokeWidth: 2,
+    selectable: false, evented: false, visible: !!checked,
+    transformMatrix: [1,0,0,1,2,2], // nice centering
+    name: 'checkmark',
+  })
+
+  const group = new fabric.Group([box, tick], {
+    left, top,
+    hasControls: false, hasBorders: false,
+    selectable: true,  // allow clicking, but not moving
+    hoverCursor: 'pointer',
+  })
+
+    // identify + lock movement
+  group.set({ fieldType: 'checkbox', fieldName, checked: !!checked })
+  group.lockMovementX = true
+  group.lockMovementY = true
+
+  // click to toggle
+  group.on('mousedown', () => {
+    group.checked = !group.checked
+    const cm = group._objects.find(o => o.name === 'checkmark')
+    if (cm) cm.visible = group.checked
+    group.canvas?.renderAll()
+  })
+
+  return group
+}
+
 // load saved fields from localStorage and inject patient data
+// function injectSavedFields(p) {
+//   const raw = localStorage.getItem(`sample_pdf`)
+//   if (!raw) return
+
+//   let data
+//   try {
+//     data = JSON.parse(raw).objects
+//   } catch {
+//     console.error('Invalid saved data')
+//     return
+//   }
+
+//   data.forEach(o => {
+//     // only inject if patient has that property
+//     if (p[o.placeholder] == null) return
+//     const text = new fabric.Textbox(p[o.placeholder], {
+//       left: o.left,
+//       top:  o.top,
+//       width:  o.width,
+//       height: o.height,
+//       fontSize: 16,
+//       hasControls: false,
+//       hasBorders:  false,
+//       selectable:  false,
+//       editable:    false
+//     })
+//     text.setCoords()
+//     modalCanvasInst.add(text)
+//   })
+
+//   modalCanvasInst.renderAll()
+// }
+
 function injectSavedFields(p) {
-  const raw = localStorage.getItem(`sample_pdf`)
+  const raw = localStorage.getItem('sample_pdf')
   if (!raw) return
 
-  let data
+  let objects = []
   try {
-    data = JSON.parse(raw).objects
-  } catch {
-    console.error('Invalid saved data')
+    const parsed = JSON.parse(raw)
+    objects = parsed.objects || []
+  } catch (e) {
+    console.error('Invalid saved data', e)
     return
   }
 
-  data.forEach(o => {
-    // only inject if patient has that property
-    if (p[o.placeholder] == null) return
-    const text = new fabric.Textbox(p[o.placeholder], {
-      left: o.left,
-      top:  o.top,
-      width:  o.width,
-      height: o.height,
-      fontSize: 16,
-      hasControls: false,
-      hasBorders:  false,
-      selectable:  false,
-      editable:    false
-    })
-    text.setCoords()
-    modalCanvasInst.add(text)
+  objects.forEach(o => {
+    // Backwards compatibility + defaults
+    const fieldType = o.fieldType || 'text'
+    const fieldName = o.fieldName || o.placeholder || 'field'
+    const size = Math.max(12, Math.min(o.width || 18, o.height || 18))
+
+    if (fieldType === 'checkbox') {
+      // Initial checked state can come from patient data or saved "checked"
+      const initialChecked =
+        (typeof p[fieldName] === 'boolean' ? p[fieldName] : undefined)
+        ?? !!o.checked
+
+      const cb = createCheckboxFill({
+        left: o.left, top: o.top,
+        size,
+        checked: initialChecked,
+        fieldName,
+      })
+      modalCanvasInst.add(cb)
+    } else {
+      // Prefer patient value, else saved value, else fieldName
+      const value =
+        (p[fieldName] != null ? p[fieldName] :
+        (o.value != null ? o.value : fieldName))
+
+      const tb = createReadonlyText({
+        left: o.left, top: o.top,
+        width: o.width, height: o.height,
+        text: value,
+      })
+      // keep metadata in case you need it later
+      tb.set({ fieldName, fieldType: 'text' })
+      modalCanvasInst.add(tb)
+    }
   })
 
+  // Canvas interaction: disable multi-select box, allow object events
+  modalCanvasInst.selection = false
+  modalCanvasInst.skipTargetFind = false
   modalCanvasInst.renderAll()
 }
 

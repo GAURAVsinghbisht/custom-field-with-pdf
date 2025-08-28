@@ -70,6 +70,15 @@
   >
     Add DOB
   </div>
+
+   <div
+    class="toolbox-item"
+    draggable="true"
+    @dragstart="startDrag($event, 'consent')"
+  >
+    Add Consent Checkbox
+  </div>
+
 </div>
 
 <div  class="toolbox-item" @click="saveFabricObject">Save</div>
@@ -85,6 +94,21 @@ import * as pdfjsLib from 'pdfjs-dist/build/pdf'
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {base64 as rawBase64} from '../assets/pdf/pdfBase64'
 
+const FIELD_SPECS = {
+  // existing ones ...
+  fullName:  { type: 'text' },
+  firstName: { type: 'text' },
+  lastName:  { type: 'text' },
+  city:      { type: 'text' },
+  age:       { type: 'number' },
+  phone:     { type: 'number' },
+  ohip:      { type: 'number' },
+  dob:       { type: 'date' },
+
+  // any boolean-like field becomes a checkbox placeholder
+  consent:   { type: 'checkbox' },
+}
+
 // tell PDF.js where to find the worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker
 
@@ -92,6 +116,8 @@ const fabricCanvas = ref(null)
 const base64 = ref(rawBase64)
 // const canvasWrapperRef = ref(null)
 let fabricCanvasInstance
+
+
 
 // whenever base64 or page changes, re-render
 const renderPDF = async () => {
@@ -195,9 +221,20 @@ onMounted(()=>{
     const rect = dropZone.getBoundingClientRect()
     const dropX = e.clientX - rect.left
     const dropY = e.clientY - rect.top
-    const fieldType = e.dataTransfer.getData('text/plain')
-    if (fieldType) {
-      const text = new fabric.Textbox(fieldType, {
+    const fieldName = e.dataTransfer.getData('text/plain')
+
+    if(!fieldName) return
+
+    const spec = specFor(fieldName)
+
+    console.log('feild. tpye: ',fieldName)
+
+    let obj
+
+    if (spec.type === 'checkbox') {
+    obj = createCheckboxPlaceholder({ left: dropX, top: dropY, name: fieldName })
+    } else {
+      obj = new fabric.Textbox(fieldName, {
         left: dropX,
         top: dropY,
         width: 150,
@@ -208,13 +245,18 @@ onMounted(()=>{
         hasControls: true,
         hasBorders: true
      })
+     obj.set({ fieldName, fieldType: spec.type || 'text' })
 
-      text.setCoords();    
+    }
+
+      
+
+      obj.setCoords();    
      
-     fabricCanvasInstance.add(text)
+     fabricCanvasInstance.add(obj)
                // ← update that text box’s corner coordinates
   //  fabricCanvasInstance.calcOffset(); // ← ensure canvas offset is fresh
-     fabricCanvasInstance.setActiveObject(text)
+     fabricCanvasInstance.setActiveObject(obj)
      fabricCanvasInstance.renderAll()
      
      // Force a re-render after a short delay
@@ -222,7 +264,7 @@ onMounted(()=>{
     //    fabricCanvasInstance.renderAll()
     //    console.log('Active object after timeout:', fabricCanvasInstance.getActiveObject())
     //  }, 100)
-   }
+   
  })
  
  // Add click event listener to canvas for debugging
@@ -231,18 +273,32 @@ onMounted(()=>{
  renderPDF()
 })
 
+
+
+const specFor = (name)=> {
+  return FIELD_SPECS[name] || { type: 'text' }
+}
+
 const startDrag = (event,fieldName) => {
  event.dataTransfer.setData('text/plain',fieldName)
 }
 
 const saveFabricObject = () =>{
-  const objects = fabricCanvasInstance.getObjects().map(o => ({
-    placeholder: o.text,  // original fieldType is stored in .text
-    left:        o.left,
-    top:         o.top,
-    width:       o.width * o.scaleX,
-    height:      o.height * o.scaleY
-  }))
+  const objects = fabricCanvasInstance.getObjects().map(o => {
+    const base = {
+      fieldName: o.fieldName || o.text || 'unknown',
+      fieldType: o.fieldType || 'text',
+      left: o.left,
+      top: o.top,
+      width: (o.width || 0) * (o.scaleX || 1),
+      height: (o.height || 0) * (o.scaleY || 1),
+    }
+    if (base.fieldType === 'checkbox') {
+      return { ...base, checked: !!o.checked }
+    } else {
+      return { ...base, value: o.text || '' }
+    }
+  })
 
   localStorage.setItem(
     'sample_pdf',
@@ -251,6 +307,46 @@ const saveFabricObject = () =>{
 
   alert('Custom fields are saved for this document!')
 }
+
+function createCheckboxPlaceholder({ left, top, name }) {
+  const box = new fabric.Rect({
+    left, top,
+    width: 18, height: 18,
+    stroke: '#000',
+    fill: '#fff',
+    rx: 3, ry: 3,
+  })
+
+  // Optional faint “ghost” check glyph for fill mode (hidden by default)
+  const tick = new fabric.Path('M 3 10 L 8 15 L 15 4', {
+    left, top,
+    stroke: '#000',
+    fill: null,
+    strokeWidth: 2,
+    visible: false,
+    selectable: false,
+    // slight offset to center visually
+    transformMatrix: [1,0,0,1,2,2],
+  })
+  tick.set({ name: 'checkmark' })
+
+  const group = new fabric.Group([box, tick], {
+    left, top,
+    selectable: true,
+    hasControls: true,
+    hasBorders: true,
+  })
+
+  // Custom metadata we’ll save/load later
+  group.set({
+    fieldType: 'checkbox',
+    fieldName: name || 'checkbox',
+    checked: false,
+  })
+
+  return group
+}
+
   
   
 // watch([() => props.base64, () => props.page, () => props.scale], renderPDF)
