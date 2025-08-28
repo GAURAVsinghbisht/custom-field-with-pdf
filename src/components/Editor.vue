@@ -317,7 +317,6 @@ function createCheckboxPlaceholder({ left, top, name }) {
     rx: 3, ry: 3,
   })
 
-  // Optional faint “ghost” check glyph for fill mode (hidden by default)
   const tick = new fabric.Path('M 3 10 L 8 15 L 15 4', {
     left, top,
     stroke: '#000',
@@ -327,14 +326,27 @@ function createCheckboxPlaceholder({ left, top, name }) {
     selectable: false,
     // slight offset to center visually
     transformMatrix: [1,0,0,1,2,2],
+    name: 'checkmark',
   })
-  tick.set({ name: 'checkmark' })
 
   const group = new fabric.Group([box, tick], {
     left, top,
     selectable: true,
     hasControls: true,
     hasBorders: true,
+
+    // 🔒 enforce proportional (uniform) scaling
+    lockUniScaling: true,
+    lockScalingFlip: true,
+  })
+
+  // Hide side handles so users can’t “squash” it via edges
+  group.setControlsVisibility({ ml:false, mr:false, mt:false, mb:false })
+
+  // Belt & suspenders: force X/Y scale to match while dragging
+  group.on('scaling', () => {
+    const u = Math.max(group.scaleX, group.scaleY)
+    group.scaleX = group.scaleY = u
   })
 
   // Custom metadata we’ll save/load later

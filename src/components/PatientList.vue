@@ -36,6 +36,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker
 
 const base64 = ref(rawBase64)
 
+const BASE = 20; // the size the check path was designed for
+const CHECK_PATH = 'M -6 0 L -2 6 L 8 -8'; // centered path (around 0,0)
+
 
 // your patient data (replace base64 with real PDF data)
 const patients = [
@@ -134,44 +137,58 @@ function createReadonlyText({ left, top, width, height, text }) {
 }
 function createCheckboxFill({ left, top, size = 18, checked = false, fieldName = 'checkbox' }) {
   const box = new fabric.Rect({
+    originX: 'center', originY: 'center',
     width: size, height: size,
-    stroke: '#000', fill: '#fff', rx: 3, ry: 3,
-    originX: 'left', originY: 'top',
+    rx: Math.min(4, size / 5), ry: Math.min(4, size / 5),
+    stroke: '#000', fill: '#fff',
+    strokeUniform: true,        // border thickness stays consistent when scaling
     selectable: false, evented: false,
-    objectCaching: false,          // child not cached
+    objectCaching: false,
   })
 
-  const tick = new fabric.Path('M 3 10 L 8 15 L 15 4', {
+  const tick = new fabric.Path(CHECK_PATH, {
+    originX: 'center', originY: 'center',
     stroke: '#000', fill: null, strokeWidth: 2,
-    originX: 'left', originY: 'top',
-    selectable: false, evented: false,
     visible: !!checked,
-    transformMatrix: [1,0,0,1,2,2], // center-ish
     name: 'checkmark',
-    objectCaching: false,          // child not cached
-    strokeUniform: true,
+    selectable: false, evented: false,
+    objectCaching: false,
+    // strokeUniform: false  // (default) lets the tick stroke scale with size
   })
+
+  // scale tick to match current size
+  const s = size / BASE
+  tick.scaleX = s
+  tick.scaleY = s
 
   const group = new fabric.Group([box, tick], {
     left, top,
-    hasControls: false, hasBorders: false,
-    selectable: true,
-    hoverCursor: 'pointer',
-    fieldType: 'checkbox',
-    fieldName,
-    checked: !!checked,
-    lockMovementX: true,
-    lockMovementY: true,
-    objectCaching: false,          // <-- key line: no cache for the group
+    hasControls: false, hasBorders: false, // in patient fill view
+    selectable: true, hoverCursor: 'pointer',
+    lockMovementX: true, lockMovementY: true,
+    lockScalingFlip: true, lockUniScaling: true, // if you later enable resize in editor
+    fieldType: 'checkbox', fieldName, checked: !!checked,
+    objectCaching: false,
   })
 
+  // toggle on click
   group.on('mousedown', () => {
     group.checked = !group.checked
-    const cm = group._objects.find(o => o.name === 'checkmark')
-    if (cm) cm.visible = group.checked
-
-    // make sure Fabric redraws NOW even with caches elsewhere
+    tick.visible = group.checked
     group.dirty = true
+    group.canvas?.requestRenderAll()
+  })
+
+  // If you let authors resize in the editor, this keeps it square and centered
+  group.on('scaling', () => {
+    const u = Math.max(group.scaleX, group.scaleY)
+    group.scaleX = group.scaleY = u           // enforce uniform scale
+  })
+  group.on('modified', () => {
+    // keep children centered after any transform
+    tick.set({ left: 0, top: 0 })
+    box.set({ left: 0, top: 0 })
+    group.addWithUpdate()
     group.canvas?.requestRenderAll()
   })
 
