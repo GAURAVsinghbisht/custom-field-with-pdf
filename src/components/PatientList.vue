@@ -132,42 +132,52 @@ function createReadonlyText({ left, top, width, height, text }) {
   tb.lockMovementY = true
   return tb
 }
-
 function createCheckboxFill({ left, top, size = 18, checked = false, fieldName = 'checkbox' }) {
   const box = new fabric.Rect({
     width: size, height: size,
     stroke: '#000', fill: '#fff', rx: 3, ry: 3,
+    originX: 'left', originY: 'top',
     selectable: false, evented: false,
+    objectCaching: false,          // child not cached
   })
+
   const tick = new fabric.Path('M 3 10 L 8 15 L 15 4', {
     stroke: '#000', fill: null, strokeWidth: 2,
-    selectable: false, evented: false, visible: !!checked,
-    transformMatrix: [1,0,0,1,2,2], // nice centering
+    originX: 'left', originY: 'top',
+    selectable: false, evented: false,
+    visible: !!checked,
+    transformMatrix: [1,0,0,1,2,2], // center-ish
     name: 'checkmark',
+    objectCaching: false,          // child not cached
+    strokeUniform: true,
   })
 
   const group = new fabric.Group([box, tick], {
     left, top,
     hasControls: false, hasBorders: false,
-    selectable: true,  // allow clicking, but not moving
+    selectable: true,
     hoverCursor: 'pointer',
+    fieldType: 'checkbox',
+    fieldName,
+    checked: !!checked,
+    lockMovementX: true,
+    lockMovementY: true,
+    objectCaching: false,          // <-- key line: no cache for the group
   })
 
-    // identify + lock movement
-  group.set({ fieldType: 'checkbox', fieldName, checked: !!checked })
-  group.lockMovementX = true
-  group.lockMovementY = true
-
-  // click to toggle
   group.on('mousedown', () => {
     group.checked = !group.checked
     const cm = group._objects.find(o => o.name === 'checkmark')
     if (cm) cm.visible = group.checked
-    group.canvas?.renderAll()
+
+    // make sure Fabric redraws NOW even with caches elsewhere
+    group.dirty = true
+    group.canvas?.requestRenderAll()
   })
 
   return group
 }
+
 
 // load saved fields from localStorage and inject patient data
 // function injectSavedFields(p) {
