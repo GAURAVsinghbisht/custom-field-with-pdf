@@ -292,6 +292,11 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     const currLen = curr.length;
     const prevLen = (lastText || "").length;
 
+    console.log("curr", curr);
+
+    console.log("currLen: ", currLen);
+    console.log("prevLen: ", prevLen);
+
     const removed = currLen < prevLen; // Backspace/Delete
     const added = currLen > prevLen; // typing/paste
 
@@ -317,11 +322,18 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
       guard = true;
       console.log("last text: ", lastText);
       tb.text = lastText;
-      tb.setSelectionStart(lastSelStart);
       tb.setSelectionEnd(lastSelEnd);
       guard = false;
       tb.canvas?.requestRenderAll();
     }
+
+    if (removed) {
+      // Always accept deletions—even if height calc lags a tick.
+      snapshot();
+      tb.canvas?.requestRenderAll();
+      return;
+    }
+
     // If lengths are equal, it's usually a noop; do nothing.
   });
 
