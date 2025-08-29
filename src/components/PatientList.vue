@@ -196,6 +196,68 @@ function createCheckboxFill({ left, top, size = 18, checked = false, fieldName =
 }
 
 
+function createFreeTextFill({ left, top, width = 500, height = 500 }) {
+  const PAD = 12
+
+  // Background & border (covers PDF behind)
+  const frame = new fabric.Rect({
+    originX: 'left', originY: 'top',
+    left: 0, top: 0,
+    width, height,
+    fill: '#fff',
+    stroke: '#000',
+    strokeWidth: 1,
+    objectCaching: false,
+    selectable: false,
+    evented: false,
+  })
+
+  // Editable text area
+  const tb = new fabric.Textbox('', {
+    originX: 'left', originY: 'top',
+    left: PAD, top: PAD,
+    width: Math.max(20, width - PAD * 2),
+    fontSize: 16,
+    fill: '#000',
+    editable: true,          // ✅ user can type
+    selectable: true,        // needed to focus caret
+    hasControls: false,      // no resize here
+    hasBorders: false,
+    objectCaching: false,
+    hoverCursor: 'text',
+  })
+
+  // Hard limit: prevent the content from growing beyond the box height
+  const maxInnerH = Math.max(10, height - PAD * 2)
+  tb.on('changed', () => {
+    // If overflow, revert the last change (handles typing & paste)
+    while (tb.height > maxInnerH && tb.text.length > 0) {
+      tb.text = tb.text.slice(0, -1)
+      tb.setSelectionStart(tb.text.length)
+      tb.setSelectionEnd(tb.text.length)
+    }
+    tb.canvas?.requestRenderAll()
+  })
+
+  const group = new fabric.Group([frame, tb], {
+    originX: 'left', originY: 'top',
+    left, top,
+    hasControls: false, hasBorders: true,  // show outer border when selected
+    selectable: true, hoverCursor: 'text',
+    lockMovementX: true, lockMovementY: true,
+    objectCaching: false,
+    fieldType: 'free-text',
+  })
+
+  // Single-click to enter editing
+  group.on('mousedown', () => { if (!tb.isEditing) tb.enterEditing() })
+
+  return group
+}
+
+
+
+
 // load saved fields from localStorage and inject patient data
 // function injectSavedFields(p) {
 //   const raw = localStorage.getItem(`sample_pdf`)
@@ -262,7 +324,21 @@ function injectSavedFields(p) {
         fieldName,
       })
       modalCanvasInst.add(cb)
-    } else {
+      return
+    } 
+
+    if (fieldType === 'free-text') {
+      const ft = createFreeTextFill({
+        left: o.left, top: o.top,
+        width: o.width || 500,
+        height: o.height || 500,
+      })
+      modalCanvasInst.add(ft)
+      return
+    }
+    
+    
+  
       // Prefer patient value, else saved value, else fieldName
       const value =
         (p[fieldName] != null ? p[fieldName] :
@@ -276,7 +352,7 @@ function injectSavedFields(p) {
       // keep metadata in case you need it later
       tb.set({ fieldName, fieldType: 'text' })
       modalCanvasInst.add(tb)
-    }
+    
   })
 
   // Canvas interaction: disable multi-select box, allow object events

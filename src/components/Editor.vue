@@ -79,6 +79,14 @@
     Add Consent Checkbox
   </div>
 
+  <div
+  class="toolbox-item"
+  draggable="true"
+  @dragstart="startDrag($event, 'freeText')"
+>
+  Add Free Text
+</div>
+
 </div>
 
 <div  class="toolbox-item" @click="saveFabricObject">Save</div>
@@ -107,6 +115,8 @@ const FIELD_SPECS = {
 
   // any boolean-like field becomes a checkbox placeholder
   consent:   { type: 'checkbox' },
+   // NEW
+   freeText:  { type: 'free-text', placeholder: 'Type here…' },
 }
 
 // tell PDF.js where to find the worker
@@ -232,8 +242,11 @@ onMounted(()=>{
     let obj
 
     if (spec.type === 'checkbox') {
-    obj = createCheckboxPlaceholder({ left: dropX, top: dropY, name: fieldName })
-    } else {
+      obj = createCheckboxPlaceholder({ left: dropX, top: dropY, name: fieldName, placeholder: spec.placeholder })
+
+    }else if (spec.type === 'free-text') {
+    obj = createFreeTextEditor({ left: dropX, top: dropY, name: fieldName, placeholder: spec.placeholder })
+  } else {
       obj = new fabric.Textbox(fieldName, {
         left: dropX,
         top: dropY,
@@ -358,6 +371,72 @@ function createCheckboxPlaceholder({ left, top, name }) {
 
   return group
 }
+
+// create free text
+
+function createFreeTextEditor({ left, top, name, placeholder = 'Type here…' }) {
+  const PAD = 12
+  const W = 500, H = 500
+
+  // Background frame
+  const frame = new fabric.Rect({
+    originX: 'left', originY: 'top',
+    left: 0, top: 0,
+    width: W, height: H,
+    fill: '#fff',             // white background
+    stroke: '#000',           // black border
+    strokeWidth: 1,
+    objectCaching: false,
+  })
+
+  // Non-editable placeholder text (for editor only)
+  const hint = new fabric.Textbox(placeholder, {
+    originX: 'left', originY: 'top',
+    left: PAD, top: PAD,
+    width: W - PAD * 2,
+    fontSize: 16,
+    fill: '#666',
+    editable: false,
+    selectable: false,
+    evented: false,
+    objectCaching: false,
+  })
+
+  // Group keeps things together and resizes cleanly
+  const group = new fabric.Group([frame, hint], {
+    originX: 'left', originY: 'top',
+    left, top,
+    hasControls: true, hasBorders: true,
+    lockRotation: true,
+    objectCaching: false,
+  })
+
+  // Bake scaling into real width/height; prevents "leaving place"
+  const bakeSize = () => {
+    const newW = Math.max(50, group.getScaledWidth())
+    const newH = Math.max(50, group.getScaledHeight())
+    frame.set({ width: newW, height: newH })
+    hint.set({ width: Math.max(20, newW - PAD * 2), left: PAD, top: PAD })
+    group.set({ scaleX: 1, scaleY: 1 })
+    group.addWithUpdate()
+    group.canvas?.requestRenderAll()
+  }
+  group.on('scaling', bakeSize)
+  group.on('modified', bakeSize)
+
+  group.set({
+    fieldType: 'free-text',
+    fieldName: name || 'freeText',
+    _pad: PAD,
+  })
+
+  // No rotation handle
+  group.setControlsVisibility({ mtr: false })
+
+  return group
+}
+
+
 
   
   
