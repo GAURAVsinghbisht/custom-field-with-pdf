@@ -297,14 +297,20 @@ const startDrag = (event,fieldName) => {
 }
 
 const saveFabricObject = () =>{
+
+
+
   const objects = fabricCanvasInstance.getObjects().map(o => {
+    const scaledW = (typeof o.getScaledWidth  === 'function') ? o.getScaledWidth()  : (o.width || 0) * (o.scaleX || 1)
+    const scaledH = (typeof o.getScaledHeight === 'function') ? o.getScaledHeight() : (o.height || 0) * (o.scaleY || 1)
+ 
     const base = {
       fieldName: o.fieldName || o.text || 'unknown',
       fieldType: o.fieldType || 'text',
       left: o.left,
       top: o.top,
-      width: (o.width || 0) * (o.scaleX || 1),
-      height: (o.height || 0) * (o.scaleY || 1),
+      width: scaledW,
+      height: scaledH,
     }
     if (base.fieldType === 'checkbox') {
       return { ...base, checked: !!o.checked }
@@ -374,22 +380,24 @@ function createCheckboxPlaceholder({ left, top, name }) {
 
 // create free text
 
+// ----- Editor: Free Text (500x500, white bg, black border) -----
 function createFreeTextEditor({ left, top, name, placeholder = 'Type here…' }) {
   const PAD = 12
   const W = 500, H = 500
+  const canvas = fabricCanvasInstance   // your editor canvas
 
-  // Background frame
+  // children anchored at (0,0) inside the group to avoid drift
   const frame = new fabric.Rect({
     originX: 'left', originY: 'top',
     left: 0, top: 0,
     width: W, height: H,
-    fill: '#fff',             // white background
-    stroke: '#000',           // black border
+    fill: '#fff',          // ✅ blocks PDF behind
+    stroke: '#000',
     strokeWidth: 1,
+    selectable: false, evented: false,
     objectCaching: false,
   })
 
-  // Non-editable placeholder text (for editor only)
   const hint = new fabric.Textbox(placeholder, {
     originX: 'left', originY: 'top',
     left: PAD, top: PAD,
@@ -397,44 +405,99 @@ function createFreeTextEditor({ left, top, name, placeholder = 'Type here…' })
     fontSize: 16,
     fill: '#666',
     editable: false,
-    selectable: false,
-    evented: false,
+    selectable: false, evented: false,
     objectCaching: false,
   })
 
-  // Group keeps things together and resizes cleanly
   const group = new fabric.Group([frame, hint], {
     originX: 'left', originY: 'top',
     left, top,
     hasControls: true, hasBorders: true,
     lockRotation: true,
+    centeredScaling: false,     // scale from the handle, not center
+    lockScalingFlip: true,
     objectCaching: false,
   })
 
-  // Bake scaling into real width/height; prevents "leaving place"
-  const bakeSize = () => {
-    const newW = Math.max(50, group.getScaledWidth())
-    const newH = Math.max(50, group.getScaledHeight())
-    frame.set({ width: newW, height: newH })
-    hint.set({ width: Math.max(20, newW - PAD * 2), left: PAD, top: PAD })
-    group.set({ scaleX: 1, scaleY: 1 })
-    group.addWithUpdate()
-    group.canvas?.requestRenderAll()
-  }
-  group.on('scaling', bakeSize)
-  group.on('modified', bakeSize)
+  // Hide rotate handle
+  group.setControlsVisibility({ mtr: false })
 
+  // Flag to detect real scaling vs moving
+  group._isScaling = false
+
+  // ---------- Bound helpers ----------
+  function clampMoveToCanvas() {
+    const gw = group.getScaledWidth()
+    const gh = group.getScaledHeight()
+    const maxLeft = Math.max(0, canvas.getWidth()  - gw)
+    const maxTop  = Math.max(0, canvas.getHeight() - gh)
+    if (group.left < 0) group.left = 0
+    if (group.top  < 0) group.top  = 0
+    if (group.left > maxLeft) group.left = maxLeft
+    if (group.top  > maxTop)  group.top  = maxTop
+    group.setCoords()
+  }
+
+  function clampScaleToCanvas() {
+    // current scaled size at this instant
+    let gw = group.getScaledWidth()
+    let gh = group.getScaledHeight()
+
+    // max allowed so the box stays fully inside the canvas at current (left, top)
+    const maxW = canvas.getWidth()  - group.left
+    const maxH = canvas.getHeight() - group.top
+
+    // shrink scale if it would overflow
+    if (gw > maxW || gh > maxH) {
+      const fx = maxW > 0 ? (maxW / gw) : 0.0001
+      const fy = maxH > 0 ? (maxH / gh) : 0.0001
+      const f = Math.min(fx, fy)
+      group.scaleX *= f
+      group.scaleY *= f
+    }
+    group.setCoords()
+  }
+
+  // ---------- Events ----------
+  // Moving: clamp to bounds; DO NOT change size here
+  group.on('moving', () => {
+    clampMoveToCanvas()
+    canvas.requestRenderAll()
+  })
+
+  // Scaling: mark flag; live clamp so the preview never leaves the canvas
+  group.on('scaling', () => {
+    group._isScaling = true
+    clampScaleToCanvas()
+    canvas.requestRenderAll()
+  })
+
+  // Modified fires after move or scale. Only bake width/height if we actually scaled.
+  group.on('modified', () => {
+    clampMoveToCanvas()
+    if (group._isScaling) {
+      const newW = Math.max(50, group.getScaledWidth())
+      const newH = Math.max(50, group.getScaledHeight())
+      frame.set({ width: newW, height: newH })
+      hint.set({ left: PAD, top: PAD, width: Math.max(20, newW - PAD * 2) })
+      group.set({ scaleX: 1, scaleY: 1 })   // bake the size, reset scale
+      group._isScaling = false
+    }
+    group.addWithUpdate()
+    canvas.requestRenderAll()
+  })
+
+  // Metadata
   group.set({
     fieldType: 'free-text',
     fieldName: name || 'freeText',
     _pad: PAD,
   })
 
-  // No rotation handle
-  group.setControlsVisibility({ mtr: false })
-
   return group
 }
+
+
 
 
 
