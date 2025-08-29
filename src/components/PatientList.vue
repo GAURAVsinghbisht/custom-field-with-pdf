@@ -225,8 +225,6 @@ function createCheckboxFill({
 
   return group;
 }
-// Patient modal: fixed-size, typeable, hard-clipped, overflow-safe,
-// and still allows Backspace/Delete + arrow keys when full.
 function createFreeTextFill({ left, top, width = 500, height = 500 }) {
   const PAD = 12;
 
@@ -263,10 +261,10 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     hasBorders: false,
     objectCaching: false,
     hoverCursor: "text",
-    splitByGrapheme: true, // wrap even long words
+    splitByGrapheme: true, // wrap very long words too
   });
 
-  // Visually clip strictly to inner box so nothing renders outside
+  // Visually clip to the inner box so nothing draws outside
   tb.clipPath = new fabric.Rect({
     originX: "center",
     originY: "center",
@@ -274,56 +272,59 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     height: innerH,
   });
 
-  // --- Overflow guard with "allow delete/navigation" behavior ---
+  // --- Overflow guard: allow Backspace/Delete & arrow keys ---
   let guard = false;
   let lastText = "";
   let lastSelStart = 0;
   let lastSelEnd = 0;
 
-  function snapshot() {
+  const snapshot = () => {
     lastText = tb.text || "";
     lastSelStart = tb.selectionStart || 0;
     lastSelEnd = tb.selectionEnd || lastSelStart;
-  }
+  };
   snapshot();
 
   tb.on("changed", () => {
     if (guard) return;
 
-    const fits = tb.height <= innerH;
-    const addedContent = (tb.text || "").length > (lastText || "").length;
+    const curr = tb.text || "";
+    const currLen = curr.length;
+    const prevLen = (lastText || "").length;
 
-    if (fits) {
-      // Any change that still fits is fine—record as new good state.
+    const removed = currLen < prevLen; // Backspace/Delete
+    const added = currLen > prevLen; // typing/paste
+
+    console.log("added: ", added);
+    console.log("removed: ", removed);
+
+    if (removed) {
+      // Always accept deletions—even if height calc lags a tick.
       snapshot();
       tb.canvas?.requestRenderAll();
       return;
     }
 
-    // It overflows:
-    // If user added content (typing/paste), block it by reverting.
-    // If user shortened text (Backspace/Delete) we won’t be here, because it would fit.
-    if (addedContent) {
+    // If it fits (or nothing changed), accept and remember
+    if (tb.height <= innerH) {
+      snapshot();
+      tb.canvas?.requestRenderAll();
+      return;
+    }
+
+    // Overflow and NOT a deletion (i.e., user added content) → revert
+    if (added) {
       guard = true;
+      console.log("last text: ", lastText);
       tb.text = lastText;
       tb.setSelectionStart(lastSelStart);
       tb.setSelectionEnd(lastSelEnd);
       guard = false;
       tb.canvas?.requestRenderAll();
-      return;
     }
-
-    // For completeness: if lengths are equal but layout somehow overflowed,
-    // also revert to be safe (rare case).
-    guard = true;
-    tb.text = lastText;
-    tb.setSelectionStart(lastSelStart);
-    tb.setSelectionEnd(lastSelEnd);
-    guard = false;
-    tb.canvas?.requestRenderAll();
+    // If lengths are equal, it's usually a noop; do nothing.
   });
 
-  // Group wrapper (locks movement/size)
   const group = new fabric.Group([frame, tb], {
     originX: "left",
     originY: "top",
@@ -339,7 +340,7 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     fieldType: "free-text",
   });
 
-  // Single-click to start typing; arrows/backspace work as normal while editing
+  // Single-click to focus caret
   group.on("mousedown", () => {
     if (!tb.isEditing) tb.enterEditing();
   });
