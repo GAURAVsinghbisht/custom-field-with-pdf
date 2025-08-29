@@ -225,12 +225,11 @@ function createCheckboxFill({
 
   return group;
 }
-// Patient modal: fixed-size, typeable, with hard overflow guard
-// Patient modal: fixed-size, typeable, hard-clipped & overflow-guarded
+// Patient modal: fixed-size, typeable, hard-clipped, overflow-safe,
+// and still allows Backspace/Delete + arrow keys when full.
 function createFreeTextFill({ left, top, width = 500, height = 500 }) {
   const PAD = 12;
 
-  // 1) Background & border (covers PDF underneath)
   const frame = new fabric.Rect({
     originX: "left",
     originY: "top",
@@ -246,7 +245,6 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     objectCaching: false,
   });
 
-  // 2) Editable text box
   const innerW = Math.max(20, width - PAD * 2);
   const innerH = Math.max(10, height - PAD * 2);
 
@@ -265,22 +263,18 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     hasBorders: false,
     objectCaching: false,
     hoverCursor: "text",
-    // This forces wrapping even for very long words (no space)
-    splitByGrapheme: true,
+    splitByGrapheme: true, // wrap even long words
   });
 
-  // 3) Visual hard-clip: nothing can render outside inner box
-  // clipPath for a Textbox is relative to its center (when absolutePositioned=false).
-  // So use origin center and size = innerW x innerH.
+  // Visually clip strictly to inner box so nothing renders outside
   tb.clipPath = new fabric.Rect({
     originX: "center",
     originY: "center",
     width: innerW,
     height: innerH,
-    absolutePositioned: false, // default; keep it relative to tb
   });
 
-  // 4) Overflow guard: block new input once content would exceed innerH.
+  // --- Overflow guard with "allow delete/navigation" behavior ---
   let guard = false;
   let lastText = "";
   let lastSelStart = 0;
@@ -296,14 +290,31 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
   tb.on("changed", () => {
     if (guard) return;
 
-    // If it fits, remember this good state
-    if (tb.height <= innerH) {
+    const fits = tb.height <= innerH;
+    const addedContent = (tb.text || "").length > (lastText || "").length;
+
+    if (fits) {
+      // Any change that still fits is fine—record as new good state.
       snapshot();
       tb.canvas?.requestRenderAll();
       return;
     }
 
-    // Would overflow -> revert the change (typing or paste)
+    // It overflows:
+    // If user added content (typing/paste), block it by reverting.
+    // If user shortened text (Backspace/Delete) we won’t be here, because it would fit.
+    if (addedContent) {
+      guard = true;
+      tb.text = lastText;
+      tb.setSelectionStart(lastSelStart);
+      tb.setSelectionEnd(lastSelEnd);
+      guard = false;
+      tb.canvas?.requestRenderAll();
+      return;
+    }
+
+    // For completeness: if lengths are equal but layout somehow overflowed,
+    // also revert to be safe (rare case).
     guard = true;
     tb.text = lastText;
     tb.setSelectionStart(lastSelStart);
@@ -312,14 +323,14 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     tb.canvas?.requestRenderAll();
   });
 
-  // 5) Group wrapper (locks movement/size)
+  // Group wrapper (locks movement/size)
   const group = new fabric.Group([frame, tb], {
     originX: "left",
     originY: "top",
     left,
     top,
     hasControls: false,
-    hasBorders: true, // shows selection outline
+    hasBorders: true,
     selectable: true,
     hoverCursor: "text",
     lockMovementX: true,
@@ -328,7 +339,7 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     fieldType: "free-text",
   });
 
-  // Single-click to start typing
+  // Single-click to start typing; arrows/backspace work as normal while editing
   group.on("mousedown", () => {
     if (!tb.isEditing) tb.enterEditing();
   });
