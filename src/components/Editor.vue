@@ -391,8 +391,8 @@ function createCheckboxPlaceholder({ left, top, name }) {
 // ----- Editor: Free Text (starts 500x500, white bg, black border) -----
 function createFreeTextEditor({ left, top, name, placeholder = "Type here…" }) {
   const PAD = 12;
-  const W = 500,
-    H = 500;
+  const W = 200,
+    H = 200;
   const canvas = fabricCanvasInstance;
 
   // Children anchored at (0,0) to avoid drift
@@ -505,29 +505,8 @@ function createFreeTextEditor({ left, top, name, placeholder = "Type here…" })
   });
 
   group.on("modified", () => {
-    // After move/scale completes
-    if (wasScaling) {
-      // Bake exact size into children; keeps handles perfectly aligned.
-      const newW = Math.max(50, scaledW());
-      const newH = Math.max(50, scaledH());
-
-      frame.set({ width: newW, height: newH });
-      hint.set({ left: PAD, top: PAD, width: Math.max(20, newW - PAD * 2) });
-
-      // Make the group reflect new dimensions (important for handle alignment)
-      group.set({ scaleX: 1, scaleY: 1 });
-      group.width = newW;
-      group.height = newH;
-
-      // Final in-bounds clamp, then recompute coords
-      clampMoveToCanvas();
-      group.addWithUpdate();
-      wasScaling = false;
-    } else {
-      // It was a move: just ensure we’re in-bounds
-      clampMoveToCanvas();
-    }
-
+   
+    clampMoveToCanvas();
     group.setCoords();
     canvas.requestRenderAll();
   });
