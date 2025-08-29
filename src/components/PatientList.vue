@@ -226,10 +226,11 @@ function createCheckboxFill({
   return group;
 }
 // Patient modal: fixed-size, typeable, with hard overflow guard
-function createFreeTextFill({ left, top, width = 200, height = 200 }) {
+// Patient modal: fixed-size, typeable, hard-clipped & overflow-guarded
+function createFreeTextFill({ left, top, width = 500, height = 500 }) {
   const PAD = 12;
 
-  // Background & border (covers PDF behind)
+  // 1) Background & border (covers PDF underneath)
   const frame = new fabric.Rect({
     originX: "left",
     originY: "top",
@@ -245,80 +246,80 @@ function createFreeTextFill({ left, top, width = 200, height = 200 }) {
     objectCaching: false,
   });
 
-  // Editable text (typed content lives here)
+  // 2) Editable text box
+  const innerW = Math.max(20, width - PAD * 2);
+  const innerH = Math.max(10, height - PAD * 2);
+
   const tb = new fabric.Textbox("", {
     originX: "left",
     originY: "top",
     left: PAD,
     top: PAD,
-    width: Math.max(20, width - PAD * 2),
-    // Fabric computes height automatically; we enforce a max below.
+    width: innerW,
     fontSize: 16,
     lineHeight: 1.2,
     fill: "#000",
     editable: true,
     selectable: true,
-    hasControls: false, // not resizable in modal
+    hasControls: false,
     hasBorders: false,
     objectCaching: false,
     hoverCursor: "text",
+    // This forces wrapping even for very long words (no space)
+    splitByGrapheme: true,
   });
 
-  // Hard visual clip (belt + suspenders so nothing paints outside)
+  // 3) Visual hard-clip: nothing can render outside inner box
+  // clipPath for a Textbox is relative to its center (when absolutePositioned=false).
+  // So use origin center and size = innerW x innerH.
   tb.clipPath = new fabric.Rect({
-    originX: "left",
-    originY: "top",
-    left: 0,
-    top: 0,
-    width: Math.max(1, width - PAD * 2),
-    height: Math.max(1, height - PAD * 2),
+    originX: "center",
+    originY: "center",
+    width: innerW,
+    height: innerH,
+    absolutePositioned: false, // default; keep it relative to tb
   });
 
-  // --- Overflow guard: stop growth when content would exceed the box ---
-  const maxInnerH = Math.max(10, height - PAD * 2);
+  // 4) Overflow guard: block new input once content would exceed innerH.
   let guard = false;
-  let lastValidText = "";
+  let lastText = "";
   let lastSelStart = 0;
   let lastSelEnd = 0;
 
-  const snapshot = () => {
-    lastValidText = tb.text || "";
-    // selectionStart/End exist on IText/Textbox
+  function snapshot() {
+    lastText = tb.text || "";
     lastSelStart = tb.selectionStart || 0;
     lastSelEnd = tb.selectionEnd || lastSelStart;
-  };
-
-  // Take an initial snapshot
+  }
   snapshot();
 
   tb.on("changed", () => {
     if (guard) return;
 
-    // If the content fits, remember this good state
-    if (tb.height <= maxInnerH) {
+    // If it fits, remember this good state
+    if (tb.height <= innerH) {
       snapshot();
       tb.canvas?.requestRenderAll();
       return;
     }
 
-    // Otherwise, revert to the last good state (block the extra char/paste)
+    // Would overflow -> revert the change (typing or paste)
     guard = true;
-    tb.text = lastValidText;
+    tb.text = lastText;
     tb.setSelectionStart(lastSelStart);
     tb.setSelectionEnd(lastSelEnd);
     guard = false;
-
     tb.canvas?.requestRenderAll();
   });
 
-  // Make it easy to start typing with a single click on the group
+  // 5) Group wrapper (locks movement/size)
   const group = new fabric.Group([frame, tb], {
     originX: "left",
     originY: "top",
     left,
     top,
     hasControls: false,
-    hasBorders: true, // selection outline on focus
+    hasBorders: true, // shows selection outline
     selectable: true,
     hoverCursor: "text",
     lockMovementX: true,
@@ -327,6 +328,7 @@ function createFreeTextFill({ left, top, width = 200, height = 200 }) {
     fieldType: "free-text",
   });
 
+  // Single-click to start typing
   group.on("mousedown", () => {
     if (!tb.isEditing) tb.enterEditing();
   });
