@@ -225,6 +225,8 @@ function createCheckboxFill({
 
   return group;
 }
+// Patient modal: fixed-size free text, clipped, overflow-safe,
+// Backspace/Delete always work (no hidden buffered chars).
 function createFreeTextFill({ left, top, width = 500, height = 500 }) {
   const PAD = 12;
 
@@ -261,10 +263,10 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     hasBorders: false,
     objectCaching: false,
     hoverCursor: "text",
-    splitByGrapheme: true, // wrap very long words too
+    splitByGrapheme: true, // wrap long words too
   });
 
-  // Visually clip to the inner box so nothing draws outside
+  // Hard visual clip so nothing draws outside inner box
   tb.clipPath = new fabric.Rect({
     originX: "center",
     originY: "center",
@@ -272,7 +274,24 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     height: innerH,
   });
 
-  // --- Overflow guard: allow Backspace/Delete & arrow keys ---
+  // --- Keystroke awareness (optional but helps IME/edge cases) ---
+  let lastKeyType = null; // 'del' | 'add' | 'nav' | null
+  function onKeyDown(e) {
+    const k = e.key;
+    if (k === "Backspace" || k === "Delete") lastKeyType = "del";
+    else if (k.length === 1 || k === "Enter" || k === "Tab" || k === " ")
+      lastKeyType = "add";
+    else lastKeyType = "nav";
+  }
+  tb.on("editing:entered", () => {
+    window.addEventListener("keydown", onKeyDown, true);
+  });
+  tb.on("editing:exited", () => {
+    window.removeEventListener("keydown", onKeyDown, true);
+    lastKeyType = null;
+  });
+
+  // --- Overflow guard with hiddenTextarea sync on revert ---
   let guard = false;
   let lastText = "";
   let lastSelStart = 0;
@@ -288,55 +307,38 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
   tb.on("changed", () => {
     if (guard) return;
 
-    const curr = tb.text || "";
-    const currLen = curr.length;
-    const prevLen = (lastText || "").length;
-
-    console.log("curr", curr);
-
-    console.log("currLen: ", currLen);
-    console.log("prevLen: ", prevLen);
-
-    const removed = currLen < prevLen; // Backspace/Delete
-    const added = currLen > prevLen; // typing/paste
-
-    console.log("added: ", added);
-    console.log("removed: ", removed);
-
-    if (removed) {
-      // Always accept deletions—even if height calc lags a tick.
+    // Always accept deletions / navigation
+    if (lastKeyType === "del" || lastKeyType === "nav") {
       snapshot();
       tb.canvas?.requestRenderAll();
       return;
     }
 
-    // If it fits (or nothing changed), accept and remember
+    // Additions are allowed only if they still fit
     if (tb.height <= innerH) {
       snapshot();
       tb.canvas?.requestRenderAll();
       return;
     }
 
-    // Overflow and NOT a deletion (i.e., user added content) → revert
-    if (added) {
-      guard = true;
-      console.log("last text: ", lastText);
-      tb.text = lastText;
-      tb.setSelectionEnd(lastSelEnd);
-      guard = false;
-      tb.canvas?.requestRenderAll();
+    // Overflow due to addition → revert and SYNC hidden textarea buffer
+    guard = true;
+    tb.text = lastText;
+    tb.setSelectionStart(lastSelStart);
+    tb.setSelectionEnd(lastSelEnd);
+
+    // 🔑 ensure browser's hidden input has NO extra chars either
+    if (tb.hiddenTextarea) {
+      tb.hiddenTextarea.value = lastText;
+      // keep caret position consistent
+      tb.hiddenTextarea.setSelectionRange(lastSelStart, lastSelEnd);
     }
 
-    if (removed) {
-      // Always accept deletions—even if height calc lags a tick.
-      snapshot();
-      tb.canvas?.requestRenderAll();
-      return;
-    }
-
-    // If lengths are equal, it's usually a noop; do nothing.
+    guard = false;
+    tb.canvas?.requestRenderAll();
   });
 
+  // Wrapper group (locked position/size)
   const group = new fabric.Group([frame, tb], {
     originX: "left",
     originY: "top",
@@ -352,7 +354,6 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     fieldType: "free-text",
   });
 
-  // Single-click to focus caret
   group.on("mousedown", () => {
     if (!tb.isEditing) tb.enterEditing();
   });
