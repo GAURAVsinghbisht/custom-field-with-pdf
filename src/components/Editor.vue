@@ -110,11 +110,9 @@ const FIELD_SPECS = {
   phone: { type: "number" },
   ohip: { type: "number" },
   dob: { type: "date" },
-
   // any boolean-like field becomes a checkbox placeholder
-  consent: { type: "checkbox" },
-  // NEW
-  freeText: { type: "free-text", placeholder: "Type here…" },
+  consent: { type: "checkbox" },  // NEW
+  freeText: { type: "free-text", placeholder: "" },
 };
 
 // tell PDF.js where to find the worker
@@ -390,9 +388,15 @@ function createCheckboxPlaceholder({ left, top, name }) {
 
 // ----- Editor: Free Text (starts 500x500, white bg, black border) -----
 function createFreeTextEditor({ left, top, name, placeholder = "Type here…" }) {
-  const PAD = 12;
+  const PAD = 1;
   const W = 200,
-    H = 200;
+  H = 200;
+  const FONT_SIZE = 16; // keep in sync with patient view
+  const LINE_HEIGHT = 1.2;
+  const MIN_CHAR_W = Math.ceil(FONT_SIZE * 0.6); // ~1 glyph width
+  const MIN_CHAR_H = Math.ceil(FONT_SIZE * LINE_HEIGHT); // 1 line height
+  const MIN_W = PAD * 2 + MIN_CHAR_W; // outer min width incl. padding
+  const MIN_H = PAD * 2 + MIN_CHAR_H; // outer min height incl. padding
   const canvas = fabricCanvasInstance;
 
   // Children anchored at (0,0) to avoid drift
@@ -489,7 +493,6 @@ function createFreeTextEditor({ left, top, name, placeholder = "Type here…" })
   }
 
   // ---------- Event wiring ----------
-  let wasScaling = false;
 
   group.on("moving", () => {
     // Moving must not alter size; just clamp position.
@@ -498,14 +501,42 @@ function createFreeTextEditor({ left, top, name, placeholder = "Type here…" })
   });
 
   group.on("scaling", () => {
-    wasScaling = true;
-    // Live clamp so preview never leaves canvas and handles match the box
-    clampScaleToCanvas();
+ 
+    let w = group.getScaledWidth();
+    let h = group.getScaledHeight();
+
+    if (w < MIN_W) {
+      group.scaleX *= MIN_W / w;
+      w = MIN_W;
+    }
+    if (h < MIN_H) {
+      group.scaleY *= MIN_H / h;
+      h = MIN_H;
+    }
+
+    // --- keep inside canvas bounds while scaling ---
+    const cw = canvas.getWidth();
+    const ch = canvas.getHeight();
+
+    if (group.left < 0) group.left = 0;
+    if (group.top < 0) group.top = 0;
+
+    const maxW = Math.max(1, cw - group.left);
+    const maxH = Math.max(1, ch - group.top);
+
+    // shrink if exceeding right/bottom edge
+    if (group.getScaledWidth() > maxW) {
+      group.scaleX *= maxW / group.getScaledWidth();
+    }
+    if (group.getScaledHeight() > maxH) {
+      group.scaleY *= maxH / group.getScaledHeight();
+    }
+
+    group.setCoords();
     canvas.requestRenderAll();
   });
 
   group.on("modified", () => {
-   
     clampMoveToCanvas();
     group.setCoords();
     canvas.requestRenderAll();

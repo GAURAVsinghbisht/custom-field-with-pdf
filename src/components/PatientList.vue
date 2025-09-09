@@ -228,7 +228,7 @@ function createCheckboxFill({
 // Patient modal: fixed-size free text, clipped, overflow-safe,
 // Backspace/Delete always work (no hidden buffered chars).
 function createFreeTextFill({ left, top, width = 500, height = 500 }) {
-  const PAD = 12;
+  const PAD = 1;
 
   const frame = new fabric.Rect({
     originX: "left",
@@ -245,8 +245,8 @@ function createFreeTextFill({ left, top, width = 500, height = 500 }) {
     objectCaching: false,
   });
 
-  const innerW = Math.max(20, width - PAD * 2);
-  const innerH = Math.max(10, height - PAD * 2);
+  const innerW = Math.max(1, width - PAD * 2);
+  const innerH = Math.max(1, height - PAD * 2);
 
   const tb = new fabric.Textbox("", {
     originX: "left",
